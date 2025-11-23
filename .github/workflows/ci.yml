@@ -153,7 +153,6 @@ jobs:
           python -m pytest -m "acceptance" -v --junitxml=pytest-results/acceptance.xml || echo "Acceptance tests failed but continuing..."
         timeout-minutes: 5
 
-  # Простий тест для перевірки, чи код взагалі запускається
   smoke_test:
     name: Smoke test
     runs-on: ubuntu-latest
@@ -173,13 +172,12 @@ jobs:
           python -c "print('Python works!')" || echo "Basic Python check failed"
       - name: Import check
         run: |
-          # Додай тут імпорт основних модулів твого проекту
           python -c "import sys; print('Import sys works')" || echo "Import check failed"
 
   build_and_push:
     name: Build Docker image
     runs-on: ubuntu-latest
-    needs: [smoke_test]  # Використовуємо тільки smoke_test для швидкості
+    needs: [smoke_test]
     if: github.event_name != 'pull_request'
     permissions:
       packages: write
@@ -199,7 +197,11 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
           cache-to: type=inline
 
