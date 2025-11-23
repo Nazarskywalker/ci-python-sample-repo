@@ -16,10 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.10, 3.11]
+        python-version: ["3.10", "3.11"]  # Added quotes for consistency
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
@@ -45,10 +45,10 @@ jobs:
           - 6379:6379
     strategy:
       matrix:
-        python-version: [3.10]
+        python-version: ["3.10"]  # Added quotes
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
@@ -59,19 +59,20 @@ jobs:
           pip install pytest
       - name: Run unit tests
         run: |
-          pytest -q -m "unit"
+          pytest -q -m "unit" --junitxml=pytest-results/unit.xml
       - name: Run integration tests
         run: |
-          pytest -q -m "integration"
+          pytest -q -m "integration" --junitxml=pytest-results/integration.xml
       - name: Run acceptance tests
         run: |
-          pytest -q -m "acceptance"
+          pytest -q -m "acceptance" --junitxml=pytest-results/acceptance.xml
       - name: Upload test results (JUnit)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pytest-results
-          path: ./pytest-results || .
+          path: ./pytest-results/
+          retention-days: 7
 
   build_and_push:
     name: Build Docker image and push to GHCR
@@ -82,21 +83,34 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN instead of GHCR_PAT if possible
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
       - name: Build and push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
-          file: ./Dockerfile
-      - name: Save image digest
-        run: echo "IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest || true)" >> $GITHUB_ENV
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   notify:
     name: Notifications & bug-tracker integration
@@ -111,14 +125,14 @@ jobs:
           fields: repo,commit,author,workflow,job
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
-      - name: Create GitHub issue on failure (example bug-tracker integration)
+      - name: Create GitHub issue on failure
         if: failure()
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const title = `CI failed for ${{ github.ref }} — ${{ github.run_number }}`;
-            const body = `The CI pipeline failed. See workflow run: ${{ github.run_id }}.\n\nJobs: \n${{ toJson(needs) }}`;
+            const title = `CI failed for ${{ github.ref }} — Run #${{ github.run_number }}`;
+            const body = `The CI pipeline failed. See workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\nFailed jobs: ${JSON.stringify(needs, null, 2)}`;
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
