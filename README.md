@@ -1,4 +1,4 @@
-# CI Sample Python Repository+Зміна
+# CI Sample Python Repository++Звіт
 
 This repository demonstrates a CI pipeline with GitHub Actions including:
 - triggers: `push`, `pull_request`, and `workflow_dispatch`
