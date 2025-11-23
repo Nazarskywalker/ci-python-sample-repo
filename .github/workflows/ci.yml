@@ -1,4 +1,4 @@
-name: CI pipeline # <--- Додано сюди
+name: CI pipeline
 
 on:
   push:
